@@ -41,6 +41,11 @@ def compute_transition_probabilities(Constants):
     reset_states, reset_prob = get_reset_state(Constants)
     # loop over all current states
     for curr_state_idx in range(Constants.K):
+        # check if drone reached goal
+        if np.all(idx2state(curr_state_idx)[:2] == Constants.GOAL_POS):
+            # stay there
+            P[curr_state_idx, curr_state_idx, :] = 1
+            continue
         # loop over all possible inputs
         for input_idx in range(Constants.L):
             # TODO: What happens if the drone crashes into drones or swan or wall?
