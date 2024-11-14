@@ -43,22 +43,19 @@ def compute_transition_probabilities(Constants):
     for curr_state_idx in range(Constants.K):
         curr_state = idx2state(curr_state_idx).astype(int)
         curr_state_drone = curr_state[:2]
+        curr_state_swan = curr_state[2:]
         # it is not possible for the drone to be already crashed
         if np.any(np.all(Constants.DRONE_POS == curr_state_drone, axis=1)):
             continue
         # If we are in the goal state, we stay there anyway
         if np.all(curr_state_drone == Constants.GOAL_POS):
             continue
+        # Swan and drone being at the same position will never happen as the game is reset before
+        if np.all(curr_state_drone == curr_state_swan):
+            continue
         # loop over all possible inputs
         for input_idx in range(Constants.L):
             # Handle Drone movement
-            curr_state_swan = curr_state[2:]
-
-            # Swan and drone being at the same position will never happen as the game is reset before
-            if np.all(curr_state_drone == curr_state_swan):
-                # set very low transisiton probability to stay in the same state for numerical stability
-                continue
-
             # handle stay input
             input = Constants.INPUT_SPACE[input_idx]
             # next state without disturbance

@@ -41,6 +41,7 @@ def compute_expected_stage_cost(Constants):
     for curr_state_idx in range(Constants.K):
         curr_state = idx2state(curr_state_idx).astype(int)
         curr_state_drone = curr_state[:2]
+        curr_state_swan = curr_state[2:]
         # it is not possible for the drone to be already crashed
         if np.any(np.all(Constants.DRONE_POS == curr_state_drone, axis=1)):
             Q[curr_state_idx, :] = 0
@@ -50,23 +51,18 @@ def compute_expected_stage_cost(Constants):
             # Terminal cost
             Q[curr_state_idx, :] = 0
             continue
+        # Swan and drone being at the same position will never happen as the game is reset before
+        if np.all(curr_state_drone == curr_state_swan):
+            Q[curr_state_idx, :] = 0
+            continue
         # loop over all possible inputs
         for input_idx in range(Constants.L):
-
             # Handle Drone movement
-            curr_state_swan = curr_state[2:]
-
-            # Swan and drone being at the same position will never happen as the game is reset before
-            if np.all(curr_state_drone == curr_state_swan):
-                Q[curr_state_idx, :] = 0
-                continue
-
             # Initialize cost
             Q[curr_state_idx, input_idx] = Constants.TIME_COST
 
             input = Constants.INPUT_SPACE[input_idx]
-
-            # add thurster cost
+            # add thruster cost
             Q[curr_state_idx, input_idx] += Constants.THRUSTER_COST * np.sum(np.abs(input))
 
             # next state without disturbance
