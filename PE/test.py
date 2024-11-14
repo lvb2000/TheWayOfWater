@@ -30,13 +30,13 @@ if __name__ == "__main__":
     for i in range(n_tests):
         print("-----------")
         print("Test " + str(i))
-        with open("tests/test" + str(i) + ".pkl", "rb") as f:
+        with open("PE/tests/test" + str(i) + ".pkl", "rb") as f:
             loaded_constants = pickle.load(f)
             for attr_name, attr_value in loaded_constants.items():
                 if hasattr(Constants, attr_name):
                     setattr(Constants, attr_name, attr_value)
 
-        file = np.load("tests/test" + str(i) + ".npz")
+        file = np.load("PE/tests/test" + str(i) + ".npz")
 
         # Begin tests
         P = compute_transition_probabilities(Constants)
