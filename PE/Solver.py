@@ -49,9 +49,40 @@ def solution(P, Q, Constants):
     """
 
     J_opt = np.zeros(Constants.K)
-    u_opt = np.zeros(Constants.K)
+    u_opt = np.zeros(Constants.K, dtype=int)
 
-    # TODO implement Value Iteration, Policy Iteration,
-    #      Linear Programming or a combination of these
+    K, _, L = P.shape  # Number of states (K) and control inputs (L)
+    gamma = 1.0
+    tol = 1e-6
+
+    count = 0
+
+    while True:
+        J_new = np.zeros(Constants.K)
+        for i in range(Constants.K):
+            costs = []
+            for l in range(L):
+                # Compute cost for taking control l in state i
+                # check if cost is infinte
+                cost = Q[i, l] + gamma * np.sum(P[i, :, l] * J_opt)
+                costs.append(cost)
+            J_new[i] = min(costs)  # Optimal value for state i
+
+        if np.max(np.abs(J_new - J_opt)) < tol:
+            break
+
+        if count > 100:
+            print(J_new)
+            count = 0
+        count += 1
+        J_opt = J_new
+
+    # Derive optimal policy
+    for i in range(Constants.K):
+        costs = []
+        for l in range(L):
+            cost = Q[i, l] + gamma * np.sum(P[i, :, l] * J_opt)
+            costs.append(cost)
+        u_opt[i] = np.argmin(costs)  # Choose the action minimizing the cost
 
     return J_opt, u_opt
