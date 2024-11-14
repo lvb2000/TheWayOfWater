@@ -38,5 +38,132 @@ def compute_expected_stage_cost(Constants):
     Q = np.ones((Constants.K, Constants.L)) * np.inf
 
     # TODO fill the expected stage cost Q here
+    for curr_state_idx in range(Constants.K):
+        curr_state = idx2state(curr_state_idx).astype(int)
+        curr_state_drone = curr_state[:2]
+        # it is not possible for the drone to be already crashed
+        if np.any(np.all(Constants.DRONE_POS == curr_state_drone, axis=1)):
+            Q[curr_state_idx, :] = 0
+            continue
+        # check if drone reached goal
+        if np.all(idx2state(curr_state_idx)[:2] == Constants.GOAL_POS):
+            # Terminal cost
+            Q[curr_state_idx, :] = 0
+            continue
+        # loop over all possible inputs
+        for input_idx in range(Constants.L):
 
+            # Handle Drone movement
+            curr_state_swan = curr_state[2:]
+
+            # Swan and drone being at the same position will never happen as the game is reset before
+            if np.all(curr_state_drone == curr_state_swan):
+                Q[curr_state_idx, :] = 0
+                continue
+
+            # Initialize cost
+            Q[curr_state_idx, input_idx] = Constants.TIME_COST
+
+            input = Constants.INPUT_SPACE[input_idx]
+
+            # add thurster cost
+            Q[curr_state_idx, input_idx] += Constants.THRUSTER_COST * np.sum(np.abs(input))
+
+            # next state without disturbance
+            next_state_drone = curr_state_drone + input
+            # with disturbance currents
+            prob_current = Constants.CURRENT_PROB[tuple(curr_state_drone)]
+            applied_current = Constants.FLOW_FIELD[tuple(curr_state_drone)]
+            # next drone state probabilities
+            possible_next_states_drone = [next_state_drone, next_state_drone + applied_current]
+            possible_next_states_prob_drone = [1 - prob_current, prob_current]
+
+            # Check if drone is out of bounds before handling swan movement
+            possible_next_states_drone_inbound = []
+            possible_next_states_prob_drone_inbound = []
+            for idx in range(len(possible_next_states_drone)):
+                Q, inbound = check_bounds(idx, Q, Constants, possible_next_states_drone,
+                                          possible_next_states_prob_drone, curr_state_idx, input_idx)
+                if inbound:
+                    Q, crash = check_crash(idx, Q, Constants, curr_state_drone, possible_next_states_drone,
+                                           possible_next_states_prob_drone, curr_state_idx, input_idx)
+                if inbound and not crash:
+                    possible_next_states_drone_inbound.append(possible_next_states_drone[idx])
+                    possible_next_states_prob_drone_inbound.append(possible_next_states_prob_drone[idx])
+            # If all options are out of bounds, skip swan analysis
+            if len(possible_next_states_drone_inbound) == 0:
+                continue
+
+            # Handle Swan movement
+            # determine the angle to drone
+            delta_y = curr_state_swan[1] - curr_state_drone[1]
+            delta_x = curr_state_drone[0] - curr_state_swan[0]
+            angle_to_drone = np.arctan2(delta_y, delta_x)
+            movement_to_drone = angle2movement(Constants.INPUT_SPACE, angle_to_drone)
+
+            possible_next_states_swan = [curr_state_swan, curr_state_swan + movement_to_drone]
+            possible_next_states_prob_swan = [1 - Constants.SWAN_PROB, Constants.SWAN_PROB]
+
+            # combine drone and swan states and add to transition matrix
+            for next_state_drone, prob_drone in zip(possible_next_states_drone_inbound,
+                                                    possible_next_states_prob_drone_inbound):
+                for next_state_swan, prob_swan in zip(possible_next_states_swan, possible_next_states_prob_swan):
+                    # check if drone and swan are at the same position in next state if yes reset
+                    if np.all(next_state_drone == next_state_swan):
+                        Q[curr_state_idx, input_idx] += Constants.DRONE_COST * prob_drone * prob_swan
+                        continue
     return Q
+
+
+def check_crash(idx, Q, Constants, curr_state_drone, possible_next_states_drone,
+                possible_next_states_prob, curr_state_idx, input_idx):
+    # check if crash with static drones by bresenham function
+    # get path
+    path = bresenham(curr_state_drone, possible_next_states_drone[idx])
+    for pos in path:
+        if np.any(np.all(Constants.DRONE_POS == pos, axis=1)):
+            # apply reset to transition probability matrix
+            Q[curr_state_idx, input_idx] += Constants.DRONE_COST * possible_next_states_prob[idx]
+            return Q, True
+    return Q, False
+
+
+def check_bounds(idx, Q, Constants, possible_next_states_drone, possible_next_states_prob,
+                 curr_state_idx, input_idx):
+    if (np.any(possible_next_states_drone[idx] < 0)
+            or possible_next_states_drone[idx][0] >= Constants.M
+            or possible_next_states_drone[idx][1] >= Constants.N):
+        # apply reset to transition probability matrix
+        Q[curr_state_idx,input_idx] += Constants.DRONE_COST * possible_next_states_prob[idx]
+        # remove this option
+        return Q, False
+    return Q, True
+
+
+def angle2movement(input_space, angle):
+    if 5 / 8 * np.pi <= angle < 7 / 8 * np.pi:
+        # North-West
+        return input_space[0]
+    elif 3 / 8 * np.pi <= angle < 5 / 8 * np.pi:
+        # North
+        return input_space[1]
+    elif 1 / 8 * np.pi <= angle < 3 / 8 * np.pi:
+        # North-East
+        return input_space[2]
+    elif angle >= 7 / 8 * np.pi or angle < -7 / 8 * np.pi:
+        # West
+        return input_space[3]
+    elif -1 / 8 * np.pi <= angle < 1 / 8 * np.pi:
+        # East
+        return input_space[5]
+    elif -7 / 8 * np.pi <= angle < -5 / 8 * np.pi:
+        # South-West
+        return input_space[6]
+    elif -5 / 8 * np.pi <= angle < -3 / 8 * np.pi:
+        # South
+        return input_space[7]
+    elif -3 / 8 * np.pi <= angle < -1 / 8 * np.pi:
+        # South-East
+        return input_space[8]
+    else:
+        return input_space[4]
