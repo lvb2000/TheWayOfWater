@@ -41,24 +41,25 @@ def compute_transition_probabilities(Constants):
     reset_states, reset_prob = get_reset_state(Constants)
     # loop over all current states
     for curr_state_idx in range(Constants.K):
-        # check if drone reached goal
-        if np.all(idx2state(curr_state_idx)[:2] == Constants.GOAL_POS):
-            # stay there
-            P[curr_state_idx, curr_state_idx, :] = 1
+        curr_state = idx2state(curr_state_idx).astype(int)
+        curr_state_drone = curr_state[:2]
+        # it is not possible for the drone to be already crashed
+        if np.any(np.all(Constants.DRONE_POS == curr_state_drone, axis=1)):
+            continue
+        # If we are in the goal state, we stay there anyway
+        if np.all(curr_state_drone == Constants.GOAL_POS):
             continue
         # loop over all possible inputs
         for input_idx in range(Constants.L):
-            # TODO: What happens if the drone crashes into drones or swan or wall?
-
             # Handle Drone movement
-            curr_state = idx2state(curr_state_idx).astype(int)
-            curr_state_drone = curr_state[:2]
             curr_state_swan = curr_state[2:]
 
             # Swan and drone being at the same position will never happen as the game is reset before
             if np.all(curr_state_drone == curr_state_swan):
+                # set very low transisiton probability to stay in the same state for numerical stability
                 continue
 
+            # handle stay input
             input = Constants.INPUT_SPACE[input_idx]
             # next state without disturbance
             next_state_drone = curr_state_drone + input
@@ -77,9 +78,9 @@ def compute_transition_probabilities(Constants):
                 if inbound:
                     P, crash = check_crash(idx, P, Constants, reset_states, reset_prob, curr_state_drone, possible_next_states_drone,
                                            possible_next_states_prob_drone, curr_state_idx, input_idx)
-                    if not crash:
-                        possible_next_states_drone_inbound.append(possible_next_states_drone[idx])
-                        possible_next_states_prob_drone_inbound.append(possible_next_states_prob_drone[idx])
+                if inbound and not crash:
+                    possible_next_states_drone_inbound.append(possible_next_states_drone[idx])
+                    possible_next_states_prob_drone_inbound.append(possible_next_states_prob_drone[idx])
             # If all options are out of bounds, skip swan analysis
             if len(possible_next_states_drone_inbound) == 0:
                 continue
@@ -103,7 +104,7 @@ def compute_transition_probabilities(Constants):
                         continue
                     next_state = np.concatenate((next_state_drone, next_state_swan))
                     next_state_idx = state2idx(next_state)
-                    P[curr_state_idx, next_state_idx, input_idx] = prob_drone * prob_swan
+                    P[curr_state_idx, next_state_idx, input_idx] += prob_drone * prob_swan
 
     return P
 
@@ -112,13 +113,13 @@ def check_crash(idx,P, Constants, reset_states, reset_prob, curr_state_drone, po
     # get path
     path = bresenham(curr_state_drone, possible_next_states_drone[idx])
     for pos in path:
-        if pos in Constants.DRONE_POS:
+        if np.any(np.all(Constants.DRONE_POS == pos, axis=1)):
             # apply reset to transition probability matrix
             P = apply_reset(P, reset_states, possible_next_states_prob[idx] * reset_prob, curr_state_idx, input_idx)
             return P, True
     return P, False
 def check_bounds(idx,P, Constants, reset_states, reset_prob, possible_next_states_drone, possible_next_states_prob, curr_state_idx, input_idx):
-    if (np.any(possible_next_states_drone[idx]) < 0
+    if (np.any(possible_next_states_drone[idx] < 0)
             or possible_next_states_drone[idx][0] >= Constants.M
             or possible_next_states_drone[idx][1] >= Constants.N):
         # apply reset to transition probability matrix
@@ -127,7 +128,7 @@ def check_bounds(idx,P, Constants, reset_states, reset_prob, possible_next_state
         return P, False
     return P, True
 def apply_reset(P, reset_states, reset_prob, curr_state_idx, input_idx):
-    P[curr_state_idx, reset_states, input_idx] = reset_prob
+    P[curr_state_idx, reset_states, input_idx] += reset_prob
     return P
 
 def get_reset_state(Constants):
