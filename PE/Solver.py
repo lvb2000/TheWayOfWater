@@ -118,7 +118,7 @@ def policy_iteration(P, Q, Constants):
 
     return J_opt, u_opt
 def policy_evaluation(Q,P,J_opt,u_opt, idx):
-    return Q[idx, u_opt] + np.sum(P[idx, :, u_opt] * J_opt, axis=1)
+    return Q[idx, u_opt] + np.einsum('ij,j->i',P[idx, :, u_opt], J_opt)
 def policy_improvement(Q,P,J_new):
     return np.argmin(Q + np.einsum('ijk,k->ij', P.transpose(0, 2, 1), J_new),axis=1)
 
