@@ -104,28 +104,23 @@ def policy_iteration(P, Q, Constants):
 
     while True:
         J_new = np.zeros(Constants.K)
-        u_new = np.zeros(Constants.K,dtype=int)
         # policy evaluation
         J_new = policy_evaluation(Q, P, J_opt, u_opt, idx)
         J_new = policy_evaluation(Q, P, J_new, u_opt, idx)
         J_new = policy_evaluation(Q, P, J_new, u_opt, idx)
-        # policy improvement
-        for i in range(Constants.K):
-            values = []
-            for j in range(Constants.L):
-                value = Q[i, j] + np.sum(P[i,:,j]*J_new)
-                values.append(value)
-            u_new[i] = np.argmin(values)
-
+        # policy improvement (u_opt gets updated)
+        u_opt = policy_improvement(Q,P,J_new)
+        # converging condition
         if np.max(np.abs(J_new-J_opt)) < tol:
             break
-
+        # update
         J_opt = J_new
-        u_opt = u_new
 
     return J_opt, u_opt
 def policy_evaluation(Q,P,J_opt,u_opt, idx):
     return Q[idx, u_opt] + np.sum(P[idx, :, u_opt] * J_opt, axis=1)
+def policy_improvement(Q,P,J_new):
+    return np.argmin(Q + np.einsum('ijk,k->ij', P.transpose(0, 2, 1), J_new),axis=1)
 
 def init_towards_goal(Constants):
     goal = Constants.GOAL_POS
