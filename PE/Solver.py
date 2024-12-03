@@ -21,6 +21,7 @@
 import numpy as np
 from utils import *
 
+ALGORITHM = "Policy Iteration"
 
 def solution(P, Q, Constants):
     """Computes the optimal cost and the optimal control input for each
@@ -47,15 +48,24 @@ def solution(P, Q, Constants):
         np.array: The optimal control policy for the stochastic SPP
 
     """
+    if ALGORITHM == "Value Iteration":
+        return value_iteration(P, Q, Constants)
+    elif ALGORITHM == "Policy Iteration":
+        return policy_iteration(P, Q, Constants)
+    elif ALGORITHM == "Linear Programming":
+        return linear_programming(P, Q, Constants)
+    elif ALGORITHM == "Hybrid":
+        return hybrid(P, Q, Constants)
+    return None, None
 
+
+def value_iteration(P, Q, Constants):
     J_opt = np.zeros(Constants.K)
     u_opt = np.zeros(Constants.K, dtype=int)
 
     K, _, L = P.shape  # Number of states (K) and control inputs (L)
     gamma = 1.0
     tol = 1e-6
-
-    count = 0
 
     while True:
         J_new = np.zeros(Constants.K)
@@ -71,10 +81,6 @@ def solution(P, Q, Constants):
         if np.max(np.abs(J_new - J_opt)) < tol:
             break
 
-        if count > 100:
-            print(J_new)
-            count = 0
-        count += 1
         J_opt = J_new
 
     # Derive optimal policy
@@ -86,3 +92,39 @@ def solution(P, Q, Constants):
         u_opt[i] = np.argmin(costs)  # Choose the action minimizing the cost
 
     return J_opt, u_opt
+
+def policy_iteration(P, Q, Constants):
+    tol = 1e-6
+
+    J_opt = np.zeros(Constants.K)
+    u_opt = np.zeros(Constants.K, dtype=int)
+
+    # Initialize policy with direction towards goal
+
+    while True:
+        J_new = np.zeros(Constants.K)
+        u_new = np.zeros(Constants.K,dtype=int)
+        # policy evaluation
+        for i in range(Constants.K):
+            J_new[i] = Q[i, u_opt[i]] + np.sum(P[i,:,u_opt[i]]*J_opt)
+        # policy improvement
+        for i in range(Constants.K):
+            values = []
+            for j in range(Constants.L):
+                value = Q[i, j] + np.sum(P[i,:,j]*J_new)
+                values.append(value)
+            u_new[i] = np.argmin(values)
+
+        if np.max(np.abs(J_new-J_opt)) < tol:
+            break
+
+        J_opt = J_new
+        u_opt = u_new
+
+    return J_opt, u_opt
+
+def linear_programming(P, Q, Constants):
+    return None, None
+
+def hybrid(P, Q, Constants):
+    return None, None
