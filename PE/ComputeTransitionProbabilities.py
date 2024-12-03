@@ -137,31 +137,3 @@ def get_reset_state(Constants):
                 idx.append(state2idx(np.array([Constants.START_POS[0], Constants.START_POS[1], i, j])))
     return np.array(idx),1/len(idx)
 
-def angle2movement(input_space,angle):
-    if 5/8*np.pi <= angle < 7/8*np.pi:
-        # North-West
-        return input_space[0]
-    elif 3/8*np.pi <= angle < 5/8*np.pi:
-        # North
-        return input_space[1]
-    elif 1/8*np.pi <= angle < 3/8*np.pi:
-        # North-East
-        return input_space[2]
-    elif angle >= 7/8*np.pi or angle < -7/8*np.pi:
-        # West
-        return input_space[3]
-    elif -1/8*np.pi <= angle < 1/8*np.pi:
-        # East
-        return input_space[5]
-    elif -7/8*np.pi <= angle < -5/8*np.pi:
-        # South-West
-        return input_space[6]
-    elif -5/8*np.pi <= angle < -3/8*np.pi:
-        # South
-        return input_space[7]
-    elif -3/8*np.pi <= angle < -1/8*np.pi:
-        # South-East
-        return input_space[8]
-    else:
-        return input_space[4]
-

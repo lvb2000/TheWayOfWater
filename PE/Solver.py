@@ -97,9 +97,9 @@ def policy_iteration(P, Q, Constants):
     tol = 1e-6
 
     J_opt = np.zeros(Constants.K)
-    u_opt = np.zeros(Constants.K, dtype=int)
 
     # Initialize policy with direction towards goal
+    u_opt = init_towards_goal(Constants)
 
     while True:
         J_new = np.zeros(Constants.K)
@@ -122,6 +122,17 @@ def policy_iteration(P, Q, Constants):
         u_opt = u_new
 
     return J_opt, u_opt
+
+def init_towards_goal(Constants):
+    goal = Constants.GOAL_POS
+    u_opt = np.zeros(Constants.K, dtype=int)
+    for i in range(Constants.K):
+        pos = idx2state(i)
+        delta_y = pos[1] - goal[1]
+        delta_x = goal[0] - pos[0]
+        angle_to_drone = np.arctan2(delta_y, delta_x)
+        u_opt[i] = angle2idx(angle_to_drone)
+    return u_opt
 
 def linear_programming(P, Q, Constants):
     return None, None
