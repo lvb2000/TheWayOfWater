@@ -100,13 +100,15 @@ def policy_iteration(P, Q, Constants):
 
     # Initialize policy with direction towards goal
     u_opt = init_towards_goal(Constants)
+    idx = np.arange(u_opt.shape[0])
 
     while True:
         J_new = np.zeros(Constants.K)
         u_new = np.zeros(Constants.K,dtype=int)
         # policy evaluation
-        for i in range(Constants.K):
-            J_new[i] = Q[i, u_opt[i]] + np.sum(P[i,:,u_opt[i]]*J_opt)
+        J_new = policy_evaluation(Q, P, J_opt, u_opt, idx)
+        J_new = policy_evaluation(Q, P, J_new, u_opt, idx)
+        J_new = policy_evaluation(Q, P, J_new, u_opt, idx)
         # policy improvement
         for i in range(Constants.K):
             values = []
@@ -122,6 +124,8 @@ def policy_iteration(P, Q, Constants):
         u_opt = u_new
 
     return J_opt, u_opt
+def policy_evaluation(Q,P,J_opt,u_opt, idx):
+    return Q[idx, u_opt] + np.sum(P[idx, :, u_opt] * J_opt, axis=1)
 
 def init_towards_goal(Constants):
     goal = Constants.GOAL_POS
