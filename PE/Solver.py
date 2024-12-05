@@ -94,21 +94,29 @@ def value_iteration(P, Q, Constants):
     return J_opt, u_opt
 
 def policy_iteration(P, Q, Constants):
-    # Initialize policy with direction towards goal
+    tol = 1e-6
     J_opt = np.zeros(Constants.K)
     u_opt = init_towards_goal(Constants)
     idx = np.arange(Constants.K)
+    eye_k = np.eye(Constants.K)
 
     while True:
-        # policy evaluation
-        J_opt = np.linalg.solve(np.eye(Constants.K) - P[idx, :, u_opt], Q[idx, u_opt])
-        # policy improvement
-        u_new = np.argmin(Q + np.einsum('ijk,j->ik', P, J_opt),axis=1)
-        if np.max(np.abs(u_opt-u_new)) == 0:
+        # Policy Evaluation
+        A = eye_k - P[idx, :, u_opt]  # Transition matrix for current policy
+        b = Q[idx, u_opt]            # Rewards for current policy
+        J_new = np.linalg.solve(A, b)
+
+        # Convergence Check
+        if np.max(np.abs(J_new - J_opt)) < tol:
             break
-        u_opt = u_new
+        J_opt = J_new
+
+        # Policy Improvement
+        cost_matrix = Q + np.einsum('ijk,j->ik', P, J_opt)  # Compute costs
+        u_opt = np.argmin(cost_matrix, axis=1)
 
     return J_opt, u_opt
+
 
 def init_towards_goal(Constants):
     goal = Constants.GOAL_POS
