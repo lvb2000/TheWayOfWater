@@ -36,6 +36,7 @@ def compute_expected_stage_cost(Constants):
         np.array: Expected stage cost Q of shape (K,L)
     """
     Q = np.ones((Constants.K, Constants.L)) * np.inf
+    input_idx = np.array([np.arange(Constants.L),np.arange(Constants.L)]).flatten()
 
     # TODO fill the expected stage cost Q here
     for curr_state_idx in range(Constants.K):
@@ -55,59 +56,51 @@ def compute_expected_stage_cost(Constants):
         if np.all(curr_state_drone == curr_state_swan):
             Q[curr_state_idx, :] = 0
             continue
+
         # loop over all possible inputs
-        for input_idx in range(Constants.L):
-            # Handle Drone movement
-            # Initialize cost
-            Q[curr_state_idx, input_idx] = Constants.TIME_COST
+        # Handle Drone movement
+        input = Constants.INPUT_SPACE
+        # add thruster cost
+        Q[curr_state_idx, :] = Constants.TIME_COST + Constants.THRUSTER_COST * np.sum(np.abs(input),axis=1)
 
-            input = Constants.INPUT_SPACE[input_idx]
-            # add thruster cost
-            Q[curr_state_idx, input_idx] += Constants.THRUSTER_COST * np.sum(np.abs(input))
+        # next state without disturbance
+        next_state_drone = curr_state_drone + input
+        # with disturbance currents
+        prob_current = Constants.CURRENT_PROB[tuple(curr_state_drone)]
+        applied_current = Constants.FLOW_FIELD[tuple(curr_state_drone)]
+        # next drone state probabilities
+        possible_next_states_drone = np.array([next_state_drone, next_state_drone + applied_current]).reshape(-1,2)
+        possible_next_states_drone_prob = np.array([[1 - prob_current] * Constants.L, [prob_current] * Constants.L]).flatten()
 
-            # next state without disturbance
-            next_state_drone = curr_state_drone + input
-            # with disturbance currents
-            prob_current = Constants.CURRENT_PROB[tuple(curr_state_drone)]
-            applied_current = Constants.FLOW_FIELD[tuple(curr_state_drone)]
-            # next drone state probabilities
-            possible_next_states_drone = [next_state_drone, next_state_drone + applied_current]
-            possible_next_states_prob_drone = [1 - prob_current, prob_current]
+        # Boundary and crash checks (vectorized)
+        inbound_mask = check_bounds_vectorized(possible_next_states_drone, Constants)
+        # Check crashes only fore inbound states
+        crash_mask = np.array([False] * possible_next_states_drone.shape[0])
+        if np.any(inbound_mask):
+            crash_mask[inbound_mask] = check_crash_vectorized(possible_next_states_drone[inbound_mask], curr_state_drone, Constants)
 
-            # Check if drone is out of bounds before handling swan movement
-            possible_next_states_drone_inbound = []
-            possible_next_states_prob_drone_inbound = []
-            for idx in range(len(possible_next_states_drone)):
-                Q, inbound = check_bounds(idx, Q, Constants, possible_next_states_drone,
-                                          possible_next_states_prob_drone, curr_state_idx, input_idx)
-                if inbound:
-                    Q, crash = check_crash(idx, Q, Constants, curr_state_drone, possible_next_states_drone,
-                                           possible_next_states_prob_drone, curr_state_idx, input_idx)
-                if inbound and not crash:
-                    possible_next_states_drone_inbound.append(possible_next_states_drone[idx])
-                    possible_next_states_prob_drone_inbound.append(possible_next_states_prob_drone[idx])
-            # If all options are out of bounds, skip swan analysis
-            if len(possible_next_states_drone_inbound) == 0:
-                continue
+        # Filter inbound and non-crash states
+        valid_mask = inbound_mask & ~crash_mask
+        # Update Q for invalid states
+        Q[curr_state_idx, :] += Constants.DRONE_COST * ((1 - prob_current) * (~valid_mask)[0:9] + prob_current * (~valid_mask)[9:])
+        if not np.any(valid_mask):
+            continue
 
-            # Handle Swan movement
-            # determine the angle to drone
-            delta_y = curr_state_swan[1] - curr_state_drone[1]
-            delta_x = curr_state_drone[0] - curr_state_swan[0]
-            angle_to_drone = np.arctan2(delta_y, delta_x)
-            movement_to_drone = angle2movement(Constants.INPUT_SPACE, angle_to_drone)
+        input_mask = input_idx[valid_mask]
+        valid_next_states_drone = possible_next_states_drone[valid_mask]
+        valid_next_states_drone_prob = possible_next_states_drone_prob[valid_mask]
 
-            possible_next_states_swan = [curr_state_swan, curr_state_swan + movement_to_drone]
-            possible_next_states_prob_swan = [1 - Constants.SWAN_PROB, Constants.SWAN_PROB]
+        # Handle Swan movement
+        # determine the angle to drone
+        delta_y = curr_state_swan[1] - curr_state_drone[1]
+        delta_x = curr_state_drone[0] - curr_state_swan[0]
+        angle_to_drone = np.arctan2(delta_y, delta_x)
+        movement_to_drone = angle2movement(Constants.INPUT_SPACE, angle_to_drone)
 
-            # combine drone and swan states and add to transition matrix
-            for next_state_drone, prob_drone in zip(possible_next_states_drone_inbound,
-                                                    possible_next_states_prob_drone_inbound):
-                for next_state_swan, prob_swan in zip(possible_next_states_swan, possible_next_states_prob_swan):
-                    # check if drone and swan are at the same position in next state if yes reset
-                    if np.all(next_state_drone == next_state_swan):
-                        Q[curr_state_idx, input_idx] += Constants.DRONE_COST * prob_drone * prob_swan
-                        continue
+        drone_swan_crash = np.all(valid_next_states_drone[:, None] == np.array([curr_state_swan, curr_state_swan + movement_to_drone]), axis=2)
+        prob = (1 - Constants.SWAN_PROB) * valid_next_states_drone_prob * drone_swan_crash[:,0] + Constants.SWAN_PROB * valid_next_states_drone_prob * drone_swan_crash[:,1]
+        np.add.at(Q[curr_state_idx], input_mask, prob * Constants.DRONE_COST)
+
     return Q
 
 
@@ -116,11 +109,12 @@ def check_crash(idx, Q, Constants, curr_state_drone, possible_next_states_drone,
     # check if crash with static drones by bresenham function
     # get path
     path = bresenham(curr_state_drone, possible_next_states_drone[idx])
-    for pos in path:
-        if np.any(np.all(Constants.DRONE_POS == pos, axis=1)):
-            # apply reset to transition probability matrix
-            Q[curr_state_idx, input_idx] += Constants.DRONE_COST * possible_next_states_prob[idx]
-            return Q, True
+    matching_indices = np.any(np.all(Constants.DRONE_POS[:, None] == path, axis=2), axis=0)
+
+    if np.any(matching_indices):
+        # Apply reset
+        Q[curr_state_idx, input_idx] += Constants.DRONE_COST * possible_next_states_prob[idx]
+        return Q, True
     return Q, False
 
 
@@ -135,6 +129,18 @@ def check_bounds(idx, Q, Constants, possible_next_states_drone, possible_next_st
         return Q, False
     return Q, True
 
+def check_bounds_vectorized(possible_next_states_drone, Constants):
+    return np.all(possible_next_states_drone >= 0, axis=1) & np.all(possible_next_states_drone < [Constants.M, Constants.N], axis=1)
+
+def check_crash_vectorized(possible_next_states_drone, curr_state_drone, Constants):
+    # check if crash with static drones by bresenham function
+    ret = np.zeros(possible_next_states_drone.shape[0], dtype=bool)
+    for idx,next_state_drone in enumerate(possible_next_states_drone):
+        path = bresenham(curr_state_drone, next_state_drone)
+        matching_indices = np.any(np.all(Constants.DRONE_POS[:, None] == path, axis=2), axis=0)
+        if np.any(matching_indices):
+            ret[idx] = True
+    return ret
 
 def angle2movement(input_space, angle):
     if 5 / 8 * np.pi <= angle < 7 / 8 * np.pi:
