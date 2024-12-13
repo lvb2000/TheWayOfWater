@@ -60,36 +60,23 @@ def solution(P, Q, Constants):
 
 
 def value_iteration(P, Q, Constants):
-    J_opt = np.zeros(Constants.K)
-    u_opt = np.zeros(Constants.K, dtype=int)
-
-    K, _, L = P.shape  # Number of states (K) and control inputs (L)
-    gamma = 1.0
     tol = 1e-6
 
-    while True:
-        J_new = np.zeros(Constants.K)
-        for i in range(Constants.K):
-            costs = []
-            for l in range(L):
-                # Compute cost for taking control l in state i
-                # check if cost is infinte
-                cost = Q[i, l] + gamma * np.sum(P[i, :, l] * J_opt)
-                costs.append(cost)
-            J_new[i] = min(costs)  # Optimal value for state i
+    J_opt = np.zeros(Constants.K)
 
+    # Initialize policy with direction towards goal
+    u_opt = init_towards_goal(Constants)
+    idx = np.arange(u_opt.shape[0])
+
+    while True:
+        # value evaluation
+        J_new = Q[idx, u_opt] + np.einsum('ij,j->i', P[idx, :, u_opt], J_opt)
+        # Convergence Check
         if np.max(np.abs(J_new - J_opt)) < tol:
             break
-
         J_opt = J_new
-
-    # Derive optimal policy
-    for i in range(Constants.K):
-        costs = []
-        for l in range(L):
-            cost = Q[i, l] + gamma * np.sum(P[i, :, l] * J_opt)
-            costs.append(cost)
-        u_opt[i] = np.argmin(costs)  # Choose the action minimizing the cost
+        # policy improvement
+        u_opt = np.argmin(Q + np.einsum('ijk,j->ik', P, J_opt), axis=1)
 
     return J_opt, u_opt
 
@@ -133,4 +120,34 @@ def linear_programming(P, Q, Constants):
     return None, None
 
 def hybrid(P, Q, Constants):
-    return None, None
+    tol = 1e-6
+
+    J_opt = np.zeros(Constants.K)
+
+    # init random policies for exploration during first step
+    u_opt = np.zeros(Constants.K)
+    u_opt1= None
+    u_opt2= None
+    u_opt3= None
+    init = True
+    idx = np.arange(p1.shape[0])
+
+    while True:
+        # value evaluation
+        if init:
+            init = False
+            J_new = Q[idx, u_opt1] + np.einsum('ij,j->i', P[idx, :, u_opt1], J_opt)
+            J_new = Q[idx, u_opt2] + np.einsum('ij,j->i', P[idx, :, u_opt2], J_new)
+            J_new = Q[idx, u_opt3] + np.einsum('ij,j->i', P[idx, :, u_opt3], J_new)
+        else:
+            J_new = Q[idx, u_opt] + np.einsum('ij,j->i', P[idx, :, u_opt], J_opt)
+            J_new = Q[idx, u_opt] + np.einsum('ij,j->i', P[idx, :, u_opt], J_new)
+            J_new = Q[idx, u_opt] + np.einsum('ij,j->i', P[idx, :, u_opt], J_new)
+        # Convergence Check
+        if np.max(np.abs(J_new - J_opt)) < tol:
+            break
+        J_opt = J_new
+        # policy improvement
+        u_opt = np.argmin(Q + np.einsum('ijk,j->ik', P, J_opt), axis=1)
+
+    return J_opt, u_opt

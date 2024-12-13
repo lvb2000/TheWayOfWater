@@ -111,6 +111,24 @@ def state2idx(state):
 
     return idx
 
+def state2idx_vectorized(states):
+    """Converts a given state into the corresponding index.
+
+    Args:
+        state (np.array): (x,y,x,y) entry in the state space
+
+    Returns:
+        int: index corresponding to the given state
+    """
+    idx = np.array([0]*states.shape[0])
+
+    factor = 1
+    for i, j in enumerate([Constants.M, Constants.N, Constants.M, Constants.N]):
+        idx += states[:,i] * factor
+        factor *= j
+
+    return idx
+
 def angle2movement(input_space,angle):
     if 5/8*np.pi <= angle < 7/8*np.pi:
         # North-West

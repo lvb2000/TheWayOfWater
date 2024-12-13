@@ -57,14 +57,11 @@ def compute_expected_stage_cost(Constants):
             Q[curr_state_idx, :] = 0
             continue
 
-        # loop over all possible inputs
-        # Handle Drone movement
-        input = Constants.INPUT_SPACE
         # add thruster cost
-        Q[curr_state_idx, :] = Constants.TIME_COST + Constants.THRUSTER_COST * np.sum(np.abs(input),axis=1)
+        Q[curr_state_idx, :] = Constants.TIME_COST + Constants.THRUSTER_COST * np.sum(np.abs(Constants.INPUT_SPACE),axis=1)
 
         # next state without disturbance
-        next_state_drone = curr_state_drone + input
+        next_state_drone = curr_state_drone + Constants.INPUT_SPACE
         # with disturbance currents
         prob_current = Constants.CURRENT_PROB[tuple(curr_state_drone)]
         applied_current = Constants.FLOW_FIELD[tuple(curr_state_drone)]
