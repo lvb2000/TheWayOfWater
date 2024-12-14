@@ -20,6 +20,7 @@
 
 import numpy as np
 from utils import *
+from scipy import optimize
 
 ALGORITHM = "Policy Iteration"
 
@@ -60,29 +61,31 @@ def solution(P, Q, Constants):
 
 
 def value_iteration(P, Q, Constants):
+    J_opt = init_values_with_distance(Constants)
+
+    K, _, L = P.shape  # Number of states (K) and control inputs (L)
+    gamma = 1.0
     tol = 1e-6
 
-    J_opt = np.zeros(Constants.K)
-
-    # Initialize policy with direction towards goal
-    u_opt = init_towards_goal(Constants)
-    idx = np.arange(u_opt.shape[0])
-
     while True:
-        # value evaluation
-        J_new = Q[idx, u_opt] + np.einsum('ij,j->i', P[idx, :, u_opt], J_opt)
-        # Convergence Check
-        if np.max(np.abs(J_new - J_opt)) < tol:
+        J_old = J_opt.copy()
+        # This uses the Gauss-Seidel update rule
+        for i in range(Constants.K):
+            costs = Q[i, :] + gamma * np.einsum('jk,j->k',P[i,:,:],J_opt)
+            J_opt[i] = min(costs)  # Optimal value for state i
+
+        if np.max(np.abs(J_old - J_opt)) < tol:
             break
-        J_opt = J_new
-        # policy improvement
-        u_opt = np.argmin(Q + np.einsum('ijk,j->ik', P, J_opt), axis=1)
+
+    # Derive optimal policy
+    costs = Q + gamma * np.einsum('ijk,j->ik', P, J_opt)
+    u_opt = np.argmin(costs,axis=1)  # Choose the action minimizing the cost
 
     return J_opt, u_opt
 
 def policy_iteration(P, Q, Constants):
     tol = 1e-6
-    J_opt = np.zeros(Constants.K)
+    J_opt = init_values_with_distance(Constants)
     u_opt = init_towards_goal(Constants)
     idx = np.arange(Constants.K)
     eye_k = np.eye(Constants.K)
@@ -104,6 +107,41 @@ def policy_iteration(P, Q, Constants):
 
     return J_opt, u_opt
 
+def linear_programming(P, Q, Constants):
+    c = np.ones(Constants.K).T
+    # get all possible actions
+    eye_k = np.eye(Constants.K)
+    A = (eye_k[:, :, None] - P).transpose(2, 0, 1).reshape(-1, Constants.K)
+    b = Q.transpose(1, 0).ravel()
+    l = np.zeros(Constants.K)
+    u = np.ones(Constants.K) * np.inf
+    res = optimize.linprog(c=-c, A_ub=A, b_ub=b, bounds=list(zip(l, u)))
+    costs = Q + np.einsum('ijk,j->ik', P, res.x)
+    u_opt = np.argmin(costs, axis=1)  # Choose the action minimizing the cost
+    return res.x, u_opt
+
+def hybrid(P, Q, Constants):
+    tol = 1e-6
+
+    J_opt = np.zeros(Constants.K)
+
+    # init random policies for exploration during first step
+    u_opt = init_towards_goal(Constants)
+    idx = np.arange(Constants.K)
+
+    while True:
+        # value evaluation
+        J_new = Q[idx, u_opt] + np.einsum('ij,j->i', P[idx, :, u_opt], J_opt)
+        J_new = Q[idx, u_opt] + np.einsum('ij,j->i', P[idx, :, u_opt], J_new)
+        J_new = Q[idx, u_opt] + np.einsum('ij,j->i', P[idx, :, u_opt], J_new)
+        # Convergence Check
+        if np.max(np.abs(J_new - J_opt)) < tol:
+            break
+        J_opt = J_new
+        # policy improvement
+        u_opt = np.argmin(Q + np.einsum('ijk,j->ik', P, J_opt), axis=1)
+
+    return J_opt, u_opt
 
 def init_towards_goal(Constants):
     goal = Constants.GOAL_POS
@@ -116,38 +154,10 @@ def init_towards_goal(Constants):
         u_opt[i] = angle2idx(angle_to_drone)
     return u_opt
 
-def linear_programming(P, Q, Constants):
-    return None, None
-
-def hybrid(P, Q, Constants):
-    tol = 1e-6
-
-    J_opt = np.zeros(Constants.K)
-
-    # init random policies for exploration during first step
-    u_opt = np.zeros(Constants.K)
-    u_opt1= None
-    u_opt2= None
-    u_opt3= None
-    init = True
-    idx = np.arange(p1.shape[0])
-
-    while True:
-        # value evaluation
-        if init:
-            init = False
-            J_new = Q[idx, u_opt1] + np.einsum('ij,j->i', P[idx, :, u_opt1], J_opt)
-            J_new = Q[idx, u_opt2] + np.einsum('ij,j->i', P[idx, :, u_opt2], J_new)
-            J_new = Q[idx, u_opt3] + np.einsum('ij,j->i', P[idx, :, u_opt3], J_new)
-        else:
-            J_new = Q[idx, u_opt] + np.einsum('ij,j->i', P[idx, :, u_opt], J_opt)
-            J_new = Q[idx, u_opt] + np.einsum('ij,j->i', P[idx, :, u_opt], J_new)
-            J_new = Q[idx, u_opt] + np.einsum('ij,j->i', P[idx, :, u_opt], J_new)
-        # Convergence Check
-        if np.max(np.abs(J_new - J_opt)) < tol:
-            break
-        J_opt = J_new
-        # policy improvement
-        u_opt = np.argmin(Q + np.einsum('ijk,j->ik', P, J_opt), axis=1)
-
-    return J_opt, u_opt
+def init_values_with_distance(Constants):
+    goal = Constants.GOAL_POS
+    idx = np.arange(Constants.K)
+    pos = idx2state_vectorized(idx)
+    # chebyshev distance which treats the diagonal as 1
+    distance = np.max(np.abs(pos[:,:2] - goal), axis=1)
+    return distance
