@@ -49,6 +49,7 @@ def solution(P, Q, Constants):
         np.array: The optimal control policy for the stochastic SPP
 
     """
+    np.random.seed(42)
     if ALGORITHM == "Value Iteration":
         return value_iteration(P, Q, Constants)
     elif ALGORITHM == "Policy Iteration":
@@ -64,27 +65,24 @@ def value_iteration(P, Q, Constants):
     J_opt = init_values_with_distance(Constants)
 
     K, _, L = P.shape  # Number of states (K) and control inputs (L)
-    gamma = 1.0
-    tol = 1e-6
 
     while True:
         J_old = J_opt.copy()
         # This uses the Gauss-Seidel update rule
         for i in range(Constants.K):
-            costs = Q[i, :] + gamma * np.einsum('jk,j->k',P[i,:,:],J_opt)
+            costs = Q[i, :] + np.einsum('jk,j->k',P[i,:,:],J_opt)
             J_opt[i] = min(costs)  # Optimal value for state i
 
-        if np.max(np.abs(J_old - J_opt)) < tol:
+        if np.allclose(J_old, J_opt,rtol=1e-04,atol=1e-07):
             break
 
     # Derive optimal policy
-    costs = Q + gamma * np.einsum('ijk,j->ik', P, J_opt)
+    costs = Q + np.einsum('ijk,j->ik', P, J_opt)
     u_opt = np.argmin(costs,axis=1)  # Choose the action minimizing the cost
 
     return J_opt, u_opt
 
 def policy_iteration(P, Q, Constants):
-    tol = 1e-6
     J_opt = init_values_with_distance(Constants)
     u_opt = init_towards_goal(Constants)
     idx = np.arange(Constants.K)
@@ -97,7 +95,7 @@ def policy_iteration(P, Q, Constants):
         J_new = np.linalg.solve(A, b)
 
         # Convergence Check
-        if np.max(np.abs(J_new - J_opt)) < tol:
+        if np.allclose(J_new, J_opt,rtol=1e-04,atol=1e-07):
             break
         J_opt = J_new
 
@@ -121,8 +119,6 @@ def linear_programming(P, Q, Constants):
     return res.x, u_opt
 
 def hybrid(P, Q, Constants):
-    tol = 1e-6
-
     J_opt = np.zeros(Constants.K)
 
     # init random policies for exploration during first step
@@ -135,7 +131,7 @@ def hybrid(P, Q, Constants):
         J_new = Q[idx, u_opt] + np.einsum('ij,j->i', P[idx, :, u_opt], J_new)
         J_new = Q[idx, u_opt] + np.einsum('ij,j->i', P[idx, :, u_opt], J_new)
         # Convergence Check
-        if np.max(np.abs(J_new - J_opt)) < tol:
+        if np.allclose(J_new, J_opt,rtol=1e-04,atol=1e-07):
             break
         J_opt = J_new
         # policy improvement
