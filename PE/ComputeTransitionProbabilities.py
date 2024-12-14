@@ -40,20 +40,19 @@ def compute_transition_probabilities(Constants):
     # TODO fill the transition probability matrix P here
     reset_states, reset_prob = get_reset_state(Constants)
     input_idx = np.array([np.arange(Constants.L), np.arange(Constants.L)]).flatten()
+
+    start_idx = np.arange(Constants.K)
+    drone_states = idx2state_vectorized(start_idx)
+    crash_drone_idx = np.any(np.all(Constants.DRONE_POS[:, None] == drone_states[:, 0:2], axis=2), axis=0)
+    goal_idx = np.all(drone_states[:, 0:2] == Constants.GOAL_POS, axis=1)
+    crash_swan_idx = np.all(drone_states[:, :2] == drone_states[:, 2:], axis=1)
+    start_idx = start_idx[~crash_drone_idx & ~goal_idx & ~crash_swan_idx]
+
     # loop over all current states
-    for curr_state_idx in range(Constants.K):
-        curr_state = idx2state(curr_state_idx).astype(int)
+    for curr_state_idx in start_idx:
+        curr_state = drone_states[curr_state_idx].astype(int)
         curr_state_drone = curr_state[:2]
         curr_state_swan = curr_state[2:]
-        # it is not possible for the drone to be already crashed
-        if np.any(np.all(Constants.DRONE_POS == curr_state_drone, axis=1)):
-            continue
-        # If we are in the goal state, we stay there anyway
-        if np.all(curr_state_drone == Constants.GOAL_POS):
-            continue
-        # Swan and drone being at the same position will never happen as the game is reset before
-        if np.all(curr_state_drone == curr_state_swan):
-            continue
 
         # next state without disturbance
         next_state_drone = curr_state_drone + Constants.INPUT_SPACE
@@ -111,18 +110,6 @@ def compute_transition_probabilities(Constants):
 
         np.add.at(P[curr_state_idx], (next_state_idx.flatten(), np.repeat(input_mask,2)), prob_no_crash.flatten())
     return P
-
-def check_crash_vectorized(possible_next_states_drone, curr_state_drone, Constants):
-    # check if crash with static drones by bresenham function
-    ret = np.zeros(possible_next_states_drone.shape[0], dtype=bool)
-    for idx,next_state_drone in enumerate(possible_next_states_drone):
-        path = bresenham(curr_state_drone, next_state_drone)
-        matching_indices = np.any(np.all(Constants.DRONE_POS[:, None] == path, axis=2), axis=0)
-        if np.any(matching_indices):
-            ret[idx] = True
-    return ret
-def check_bounds_vectorized(possible_next_states_drone, Constants):
-    return np.all(possible_next_states_drone >= 0, axis=1) & np.all(possible_next_states_drone < [Constants.M, Constants.N], axis=1)
 
 def get_reset_state(Constants):
     idx = []

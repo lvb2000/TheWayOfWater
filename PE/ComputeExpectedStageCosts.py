@@ -38,27 +38,29 @@ def compute_expected_stage_cost(Constants):
     Q = np.ones((Constants.K, Constants.L)) * np.inf
     input_idx = np.array([np.arange(Constants.L),np.arange(Constants.L)]).flatten()
 
-    # TODO fill the expected stage cost Q here
-    for curr_state_idx in range(Constants.K):
-        curr_state = idx2state(curr_state_idx).astype(int)
+    # List all states
+    start_idx = np.arange(Constants.K)
+    drone_states = idx2state_vectorized(start_idx)
+    # Computed state idxs for all unreachable states
+    # Crash drone with stationary drone
+    crash_drone_idx = np.any(np.all(Constants.DRONE_POS[:,None] == drone_states[:,0:2], axis=2), axis=0)
+    # Terminal state
+    goal_idx = np.all(drone_states[:,0:2] == Constants.GOAL_POS, axis=1)
+    # Crash drone with swan
+    crash_swan_idx = np.all(drone_states[:,:2] == drone_states[:,2:], axis=1)
+    # Filter out unreachable states
+    start_idx = start_idx[~crash_drone_idx & ~goal_idx & ~crash_swan_idx]
+    # Set Q for unreachable states to zero
+    Q[crash_drone_idx] = 0
+    Q[goal_idx] = 0
+    Q[crash_swan_idx] = 0
+    # For remaining states, set Q to the cost of moving to the goal
+    Q[start_idx] = Constants.TIME_COST + Constants.THRUSTER_COST * np.sum(np.abs(Constants.INPUT_SPACE), axis=1)
+
+    for curr_state_idx in start_idx:
+        curr_state = drone_states[curr_state_idx].astype(int)
         curr_state_drone = curr_state[:2]
         curr_state_swan = curr_state[2:]
-        # it is not possible for the drone to be already crashed
-        if np.any(np.all(Constants.DRONE_POS == curr_state_drone, axis=1)):
-            Q[curr_state_idx, :] = 0
-            continue
-        # check if drone reached goal
-        if np.all(idx2state(curr_state_idx)[:2] == Constants.GOAL_POS):
-            # Terminal cost
-            Q[curr_state_idx, :] = 0
-            continue
-        # Swan and drone being at the same position will never happen as the game is reset before
-        if np.all(curr_state_drone == curr_state_swan):
-            Q[curr_state_idx, :] = 0
-            continue
-
-        # add thruster cost
-        Q[curr_state_idx, :] = Constants.TIME_COST + Constants.THRUSTER_COST * np.sum(np.abs(Constants.INPUT_SPACE),axis=1)
 
         # next state without disturbance
         next_state_drone = curr_state_drone + Constants.INPUT_SPACE
@@ -99,70 +101,3 @@ def compute_expected_stage_cost(Constants):
         np.add.at(Q[curr_state_idx], input_mask, prob * Constants.DRONE_COST)
 
     return Q
-
-
-def check_crash(idx, Q, Constants, curr_state_drone, possible_next_states_drone,
-                possible_next_states_prob, curr_state_idx, input_idx):
-    # check if crash with static drones by bresenham function
-    # get path
-    path = bresenham(curr_state_drone, possible_next_states_drone[idx])
-    matching_indices = np.any(np.all(Constants.DRONE_POS[:, None] == path, axis=2), axis=0)
-
-    if np.any(matching_indices):
-        # Apply reset
-        Q[curr_state_idx, input_idx] += Constants.DRONE_COST * possible_next_states_prob[idx]
-        return Q, True
-    return Q, False
-
-
-def check_bounds(idx, Q, Constants, possible_next_states_drone, possible_next_states_prob,
-                 curr_state_idx, input_idx):
-    if (np.any(possible_next_states_drone[idx] < 0)
-            or possible_next_states_drone[idx][0] >= Constants.M
-            or possible_next_states_drone[idx][1] >= Constants.N):
-        # apply reset to transition probability matrix
-        Q[curr_state_idx,input_idx] += Constants.DRONE_COST * possible_next_states_prob[idx]
-        # remove this option
-        return Q, False
-    return Q, True
-
-def check_bounds_vectorized(possible_next_states_drone, Constants):
-    return np.all(possible_next_states_drone >= 0, axis=1) & np.all(possible_next_states_drone < [Constants.M, Constants.N], axis=1)
-
-def check_crash_vectorized(possible_next_states_drone, curr_state_drone, Constants):
-    # check if crash with static drones by bresenham function
-    ret = np.zeros(possible_next_states_drone.shape[0], dtype=bool)
-    for idx,next_state_drone in enumerate(possible_next_states_drone):
-        path = bresenham(curr_state_drone, next_state_drone)
-        matching_indices = np.any(np.all(Constants.DRONE_POS[:, None] == path, axis=2), axis=0)
-        if np.any(matching_indices):
-            ret[idx] = True
-    return ret
-
-def angle2movement(input_space, angle):
-    if 5 / 8 * np.pi <= angle < 7 / 8 * np.pi:
-        # North-West
-        return input_space[0]
-    elif 3 / 8 * np.pi <= angle < 5 / 8 * np.pi:
-        # North
-        return input_space[1]
-    elif 1 / 8 * np.pi <= angle < 3 / 8 * np.pi:
-        # North-East
-        return input_space[2]
-    elif angle >= 7 / 8 * np.pi or angle < -7 / 8 * np.pi:
-        # West
-        return input_space[3]
-    elif -1 / 8 * np.pi <= angle < 1 / 8 * np.pi:
-        # East
-        return input_space[5]
-    elif -7 / 8 * np.pi <= angle < -5 / 8 * np.pi:
-        # South-West
-        return input_space[6]
-    elif -5 / 8 * np.pi <= angle < -3 / 8 * np.pi:
-        # South
-        return input_space[7]
-    elif -3 / 8 * np.pi <= angle < -1 / 8 * np.pi:
-        # South-East
-        return input_space[8]
-    else:
-        return input_space[4]

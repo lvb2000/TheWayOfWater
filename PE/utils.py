@@ -129,6 +129,29 @@ def state2idx_vectorized(states):
 
     return idx
 
+def idx2state_vectorized(idx):
+    """Converts a given index into the corresponding state.
+
+    Args:
+        idx (int): index of the entry whose state is required
+
+    Returns:
+        np.array: (x,y,x,y) state corresponding to the given index
+    """
+    state = np.empty((idx.shape[0],4))
+
+    for i, j in enumerate(
+            [
+                Constants.M,
+                Constants.N,
+                Constants.M,
+                Constants.N,
+            ]
+    ):
+        state[:,i] = idx % j
+        idx = idx // j
+    return state
+
 def angle2movement(input_space,angle):
     if 5/8*np.pi <= angle < 7/8*np.pi:
         # North-West
@@ -184,3 +207,16 @@ def angle2idx(angle):
         return 8
     else:
         return 4
+
+def check_bounds_vectorized(possible_next_states_drone, Constants):
+    return np.all(possible_next_states_drone >= 0, axis=1) & np.all(possible_next_states_drone < [Constants.M, Constants.N], axis=1)
+
+def check_crash_vectorized(possible_next_states_drone, curr_state_drone, Constants):
+    # check if crash with static drones by bresenham function
+    ret = np.zeros(possible_next_states_drone.shape[0], dtype=bool)
+    for idx,next_state_drone in enumerate(possible_next_states_drone):
+        path = bresenham(curr_state_drone, next_state_drone)
+        matching_indices = np.any(np.all(Constants.DRONE_POS[:, None] == path, axis=2), axis=0)
+        if np.any(matching_indices):
+            ret[idx] = True
+    return ret
